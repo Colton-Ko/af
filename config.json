@@ -1,0 +1,30 @@
+{
+    "name": "Photo book",
+    "title": "TU154",
+    "description": "Journal of a wandering cameraman underwater.",
+    "url": "https://google.com",
+    "accentColor": "#000000",
+    "author": {
+        "name": "Joe",
+        "url": "https://af-site-ehq.pages.dev",
+        "avatar": "https://i.imgur.com/b2qK4Lx.jpeg"
+    },
+    "social": {
+        "github": "",
+        "twitter": "",
+        "rss": false
+    },
+    "feed": {
+        "folo": {
+            "challenge": {
+                "feedId": "",
+                "userId": ""
+            }
+        }
+    },
+    "map": [
+        "maplibre"
+    ],
+    "mapStyle": "builtin",
+    "mapProjection": "mercator"
+}
