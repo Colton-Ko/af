@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   deletePhotoAssets,
   getPhotoAssetSummary,
+  getPhotoSyncStatus,
   listPhotoAssets,
   listPhotoSyncConflicts,
   resolvePhotoSyncConflict,
@@ -13,11 +14,20 @@ import type { PhotoAssetListItem, PhotoSyncResolution } from './types'
 export const PHOTO_ASSET_SUMMARY_QUERY_KEY = ['photo-assets', 'summary'] as const
 export const PHOTO_ASSET_LIST_QUERY_KEY = ['photo-assets', 'list'] as const
 export const PHOTO_SYNC_CONFLICTS_QUERY_KEY = ['photo-sync', 'conflicts'] as const
+export const PHOTO_SYNC_STATUS_QUERY_KEY = ['photo-sync', 'status'] as const
 
 export function usePhotoAssetSummaryQuery() {
   return useQuery({
     queryKey: PHOTO_ASSET_SUMMARY_QUERY_KEY,
     queryFn: getPhotoAssetSummary,
+  })
+}
+
+export function usePhotoSyncStatusQuery(options?: { enabled?: boolean }) {
+  return useQuery({
+    queryKey: PHOTO_SYNC_STATUS_QUERY_KEY,
+    queryFn: getPhotoSyncStatus,
+    enabled: options?.enabled ?? true,
   })
 }
 
@@ -41,10 +51,13 @@ export function useDeletePhotoAssetsMutation() {
   const queryClient = useQueryClient()
 
   return useMutation({
-    mutationFn: async (ids: string[]) => {
-      await deletePhotoAssets(ids)
+    mutationFn: async (variables: { ids: string[]; deleteFromStorage?: boolean }) => {
+      await deletePhotoAssets(variables.ids, {
+        deleteFromStorage: variables.deleteFromStorage,
+      })
     },
-    onSuccess: (_, ids) => {
+    onSuccess: (_, variables) => {
+      const { ids } = variables
       void queryClient.invalidateQueries({
         queryKey: PHOTO_ASSET_LIST_QUERY_KEY,
       })

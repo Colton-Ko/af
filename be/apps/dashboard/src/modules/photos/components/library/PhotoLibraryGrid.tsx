@@ -1,9 +1,19 @@
-import { Button, Prompt, Thumbhash } from '@afilmory/ui'
+import { Button, Modal, Prompt, Thumbhash } from '@afilmory/ui'
 import { clsxm } from '@afilmory/utils'
+import { useAtomValue } from 'jotai'
 import { DynamicIcon } from 'lucide-react/dynamic'
 
+import { viewportAtom } from '~/atoms/viewport'
+import { stopPropagation } from '~/lib/dom'
+
 import type { PhotoAssetListItem } from '../../types'
+import { DeleteFromStorageOption } from './DeleteFromStorageOption'
 import { Masonry } from './Masonry'
+import { PhotoExifDetailsModal } from './PhotoExifDetailsModal'
+
+export type DeleteAssetOptions = {
+  deleteFromStorage?: boolean
+}
 
 type PhotoLibraryGridProps = {
   assets: PhotoAssetListItem[] | undefined
@@ -11,7 +21,7 @@ type PhotoLibraryGridProps = {
   selectedIds: Set<string>
   onToggleSelect: (id: string) => void
   onOpenAsset: (asset: PhotoAssetListItem) => void
-  onDeleteAsset: (asset: PhotoAssetListItem) => Promise<void> | void
+  onDeleteAsset: (asset: PhotoAssetListItem, options?: DeleteAssetOptions) => Promise<void> | void
   isDeleting?: boolean
 }
 
@@ -27,7 +37,7 @@ function PhotoGridItem({
   isSelected: boolean
   onToggleSelect: (id: string) => void
   onOpenAsset: (asset: PhotoAssetListItem) => void
-  onDeleteAsset: (asset: PhotoAssetListItem) => Promise<void> | void
+  onDeleteAsset: (asset: PhotoAssetListItem, options?: DeleteAssetOptions) => Promise<void> | void
   isDeleting?: boolean
 }) {
   const manifest = asset.manifest?.data
@@ -43,20 +53,36 @@ function PhotoGridItem({
   const assetLabel = manifest?.title ?? manifest?.id ?? asset.photoId
 
   const handleDelete = () => {
+    let deleteFromStorage = false
+
     Prompt.prompt({
       title: '确认删除该资源？',
-      description: `删除后将无法恢复，是否继续删除「${assetLabel}」？`,
+      description: `删除后将无法恢复，是否继续删除「${assetLabel}」？如需同时删除远程存储文件，可勾选下方选项。`,
       variant: 'danger',
       onConfirmText: '删除',
       onCancelText: '取消',
-      onConfirm: () => Promise.resolve(onDeleteAsset(asset)),
+      content: (
+        <DeleteFromStorageOption
+          onChange={(checked) => {
+            deleteFromStorage = checked
+          }}
+        />
+      ),
+      onConfirm: () => Promise.resolve(onDeleteAsset(asset, { deleteFromStorage })),
+    })
+  }
+  const handleViewExif = () => {
+    if (!manifest) return
+
+    Modal.present(PhotoExifDetailsModal, {
+      manifest,
     })
   }
 
   return (
     <div
       className={clsxm(
-        'relative group overflow-hidden rounded-xl border border-border/10 bg-background-secondary/40 shadow-sm transition-all duration-200',
+        'relative group overflow-hidden bg-background-secondary/40 transition-all duration-200',
         isSelected && 'ring-2 ring-accent/80',
       )}
     >
@@ -91,20 +117,22 @@ function PhotoGridItem({
         </div>
       )}
 
-      <div className="bg-background/5 absolute inset-0 flex flex-col justify-between opacity-0 backdrop-blur-sm transition-opacity duration-200 group-hover:opacity-100">
+      <div
+        role="button"
+        onClick={() => onToggleSelect(asset.id)}
+        className="bg-background/5 absolute inset-0 flex flex-col justify-between opacity-0 backdrop-blur-sm transition-opacity duration-200 group-hover:opacity-100"
+      >
         <div className="flex items-start justify-between p-3 text-xs text-white">
           <div className="max-w-[70%] truncate font-medium">{manifest?.title ?? manifest?.id ?? asset.photoId}</div>
-          <button
-            type="button"
+          <div
             className={clsxm(
               'inline-flex items-center rounded-full border border-white/30 bg-black/40 px-2 py-1 text-[10px] uppercase tracking-wide text-white transition-colors',
               isSelected ? 'bg-accent text-white' : 'hover:bg-white/10',
             )}
-            onClick={() => onToggleSelect(asset.id)}
           >
             <DynamicIcon name={isSelected ? 'check' : 'square'} className="mr-1 h-3 w-3" />
             <span>{isSelected ? '已选择' : '选择'}</span>
-          </button>
+          </div>
         </div>
 
         <div className="flex items-center justify-between gap-2 p-3">
@@ -113,7 +141,7 @@ function PhotoGridItem({
             <span>{updatedAtLabel}</span>
             <span>{fileSizeLabel}</span>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2" onClick={stopPropagation} tabIndex={-1}>
             <Button
               type="button"
               variant="ghost"
@@ -128,7 +156,18 @@ function PhotoGridItem({
               type="button"
               variant="ghost"
               size="xs"
-              className="bg-rose-500/20 text-rose-50 hover:bg-rose-500/30"
+              className="bg-black/40 text-white hover:bg-black/60"
+              disabled={!manifest}
+              onClick={handleViewExif}
+            >
+              <DynamicIcon name="info" className="mr-1 h-3.5 w-3.5" />
+              <span>EXIF</span>
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="xs"
+              className="bg-red/20 text-rose-50 hover:bg-red!"
               disabled={isDeleting}
               onClick={handleDelete}
             >
@@ -151,18 +190,13 @@ export function PhotoLibraryGrid({
   onDeleteAsset,
   isDeleting,
 }: PhotoLibraryGridProps) {
+  const viewport = useAtomValue(viewportAtom)
+  const columnWidth = viewport.sm ? 320 : 160
+
   if (isLoading) {
-    const skeletonKeys = [
-      'photo-skeleton-1',
-      'photo-skeleton-2',
-      'photo-skeleton-3',
-      'photo-skeleton-4',
-      'photo-skeleton-5',
-      'photo-skeleton-6',
-    ]
     return (
       <div className="columns-1 gap-4 sm:columns-2 lg:columns-3">
-        {skeletonKeys.map((key) => (
+        {Array.from({ length: 6 }, (_, i) => `photo-skeleton-${i + 1}`).map((key) => (
           <div key={key} className="mb-4 break-inside-avoid">
             <div className="bg-fill/30 h-48 w-full animate-pulse rounded-xl" />
           </div>
@@ -173,19 +207,19 @@ export function PhotoLibraryGrid({
 
   if (!assets || assets.length === 0) {
     return (
-      <div className="bg-background-tertiary relative overflow-hidden rounded-xl p-8 text-center">
-        <p className="text-text text-base font-semibold">当前没有图片资源</p>
-        <p className="text-text-tertiary mt-2 text-sm">使用右上角的“上传图片”按钮可以为图库添加新的照片。</p>
+      <div className="bg-background-tertiary relative overflow-hidden rounded-xl p-4 sm:p-8 text-center">
+        <p className="text-text text-sm sm:text-base font-semibold">当前没有图片资源</p>
+        <p className="text-text-tertiary mt-2 text-xs sm:text-sm">使用右上角的"上传图片"按钮可以为图库添加新的照片。</p>
       </div>
     )
   }
 
   return (
-    <div className="mx-[calc(calc((3rem+100vw)-(var(--container-7xl)))*-1/2)] p-2">
+    <div className="lg:mx-[calc(calc((3rem+100vw)-(var(--container-7xl)))*-1/2)] -mx-2 lg:mt-0 mt-12 p-1">
       <Masonry
         items={assets}
         columnGutter={8}
-        columnWidth={320}
+        columnWidth={columnWidth}
         itemKey={(asset) => asset.id}
         render={({ data }) => (
           <PhotoGridItem

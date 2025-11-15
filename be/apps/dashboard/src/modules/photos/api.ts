@@ -9,6 +9,7 @@ import type {
   PhotoSyncProgressEvent,
   PhotoSyncResolution,
   PhotoSyncResult,
+  PhotoSyncStatus,
   RunPhotoSyncPayload,
 } from './types'
 
@@ -163,10 +164,13 @@ export async function getPhotoAssetSummary(): Promise<PhotoAssetSummary> {
   return camelCaseKeys<PhotoAssetSummary>(summary)
 }
 
-export async function deletePhotoAssets(ids: string[]): Promise<void> {
+export async function deletePhotoAssets(ids: string[], options?: { deleteFromStorage?: boolean }): Promise<void> {
   await coreApi('/photos/assets', {
     method: 'DELETE',
-    body: { ids },
+    body: {
+      ids,
+      deleteFromStorage: options?.deleteFromStorage === true,
+    },
   })
 }
 
@@ -203,4 +207,9 @@ export async function getPhotoStorageUrl(storageKey: string): Promise<string> {
   const data = camelCaseKeys<{ url: string }>(result)
 
   return data.url
+}
+
+export async function getPhotoSyncStatus(): Promise<PhotoSyncStatus> {
+  const status = await coreApi<PhotoSyncStatus>('/data-sync/status')
+  return camelCaseKeys<PhotoSyncStatus>(status)
 }

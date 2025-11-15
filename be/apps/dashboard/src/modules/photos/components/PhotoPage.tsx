@@ -1,6 +1,7 @@
+import { Prompt } from '@afilmory/ui'
 import type { ReactNode } from 'react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { useSearchParams } from 'react-router'
+import { useParams } from 'react-router'
 import { toast } from 'sonner'
 
 import { MainPageLayout } from '~/components/layouts/MainPageLayout'
@@ -14,6 +15,7 @@ import {
   usePhotoAssetListQuery,
   usePhotoAssetSummaryQuery,
   usePhotoSyncConflictsQuery,
+  usePhotoSyncStatusQuery,
   useResolvePhotoSyncConflictMutation,
   useUploadPhotoAssetsMutation,
 } from '../hooks'
@@ -26,6 +28,8 @@ import type {
   PhotoSyncResolution,
   PhotoSyncResult,
 } from '../types'
+import { DeleteFromStorageOption } from './library/DeleteFromStorageOption'
+import type { DeleteAssetOptions } from './library/PhotoLibraryGrid'
 import { PhotoLibraryGrid } from './library/PhotoLibraryGrid'
 import { PhotoPageActions } from './PhotoPageActions'
 import { PhotoSyncConflictsPanel } from './sync/PhotoSyncConflictsPanel'
@@ -33,6 +37,12 @@ import { PhotoSyncProgressPanel } from './sync/PhotoSyncProgressPanel'
 import { PhotoSyncResultPanel } from './sync/PhotoSyncResultPanel'
 
 export type PhotoPageTab = 'sync' | 'library' | 'storage'
+
+const TAB_ROUTE_MAP: Record<PhotoPageTab, string> = {
+  sync: '/photos/sync',
+  library: '/photos/library',
+  storage: '/photos/storage',
+}
 
 const BATCH_RESOLVING_ID = '__batch__'
 
@@ -61,11 +71,9 @@ function createInitialStages(totals: PhotoSyncProgressState['totals']): PhotoSyn
 }
 
 export function PhotoPage() {
-  const [searchParams, setSearchParams] = useSearchParams()
-  const initialTabParam = searchParams.get('tab')
-  const normalizedInitialTab: PhotoPageTab =
-    initialTabParam === 'library' || initialTabParam === 'storage' ? (initialTabParam as PhotoPageTab) : 'sync'
-  const [activeTab, setActiveTab] = useState<PhotoPageTab>(normalizedInitialTab)
+  const { tab } = useParams<{ tab?: string }>()
+  const activeTab: PhotoPageTab =
+    tab === 'library' || tab === 'storage' || tab === 'sync' ? (tab as PhotoPageTab) : 'sync'
   const [result, setResult] = useState<PhotoSyncResult | null>(null)
   const [lastWasDryRun, setLastWasDryRun] = useState<boolean | null>(null)
   const [selectedIds, setSelectedIds] = useState<string[]>([])
@@ -73,10 +81,20 @@ export function PhotoPage() {
   const [syncProgress, setSyncProgress] = useState<PhotoSyncProgressState | null>(null)
 
   useEffect(() => {
-    setActiveTab(normalizedInitialTab)
-  }, [normalizedInitialTab])
+    if (activeTab !== 'library' && selectedIds.length > 0) {
+      setSelectedIds([])
+    }
+  }, [activeTab, selectedIds.length])
 
   const summaryQuery = usePhotoAssetSummaryQuery()
+  const {
+    data: syncStatus,
+    isLoading: isSyncStatusLoading,
+    isFetching: isSyncStatusFetching,
+    refetch: refetchSyncStatus,
+  } = usePhotoSyncStatusQuery({
+    enabled: activeTab === 'sync',
+  })
   const listQuery = usePhotoAssetListQuery({ enabled: activeTab === 'library' })
   const deleteMutation = useDeletePhotoAssetsMutation()
   const uploadMutation = useUploadPhotoAssetsMutation()
@@ -224,7 +242,7 @@ export function PhotoPage() {
         })
       }
     },
-    [setResult, setLastWasDryRun],
+    [setLastWasDryRun],
   )
 
   const handleSyncError = useCallback((error: Error) => {
@@ -240,10 +258,13 @@ export function PhotoPage() {
   }, [])
 
   const handleDeleteAssets = useCallback(
-    async (ids: string[]) => {
+    async (ids: string[], options?: DeleteAssetOptions) => {
       if (ids.length === 0) return
       try {
-        await deleteMutation.mutateAsync(ids)
+        await deleteMutation.mutateAsync({
+          ids,
+          deleteFromStorage: options?.deleteFromStorage ?? false,
+        })
         toast.success(`已删除 ${ids.length} 个资源`)
         setSelectedIds((prev) => prev.filter((item) => !ids.includes(item)))
         void listQuery.refetch()
@@ -279,12 +300,34 @@ export function PhotoPage() {
 
       void summaryQuery.refetch()
       void listQuery.refetch()
+      void refetchSyncStatus()
     },
-    [listQuery, summaryQuery],
+    [listQuery, summaryQuery, refetchSyncStatus],
   )
 
   const handleDeleteSelected = useCallback(() => {
-    void handleDeleteAssets(selectedIds)
+    if (selectedIds.length === 0) {
+      return
+    }
+
+    const ids = [...selectedIds]
+    let deleteFromStorage = false
+
+    Prompt.prompt({
+      title: `确认删除选中的 ${ids.length} 个资源？`,
+      description: '删除后将无法恢复。如需同时删除存储提供商中的文件，可勾选下方选项。',
+      variant: 'danger',
+      onConfirmText: '删除',
+      onCancelText: '取消',
+      content: (
+        <DeleteFromStorageOption
+          onChange={(checked) => {
+            deleteFromStorage = checked
+          }}
+        />
+      ),
+      onConfirm: () => handleDeleteAssets(ids, { deleteFromStorage }),
+    })
   }, [handleDeleteAssets, selectedIds])
 
   const handleSelectAll = useCallback(() => {
@@ -296,8 +339,8 @@ export function PhotoPage() {
   }, [listQuery.data])
 
   const handleDeleteSingle = useCallback(
-    (asset: PhotoAssetListItem) => {
-      void handleDeleteAssets([asset.id])
+    (asset: PhotoAssetListItem, options?: DeleteAssetOptions) => {
+      void handleDeleteAssets([asset.id], options)
     },
     [handleDeleteAssets],
   )
@@ -394,21 +437,6 @@ export function PhotoPage() {
     }
   }
 
-  const handleTabChange = (tab: PhotoPageTab) => {
-    setActiveTab(tab)
-    const next = new URLSearchParams(searchParams.toString())
-    if (tab === 'sync') {
-      next.delete('tab')
-    } else {
-      next.set('tab', tab)
-    }
-    setSearchParams(next, { replace: true })
-
-    if (tab !== 'library') {
-      setSelectedIds([])
-    }
-  }
-
   const showConflictsPanel =
     conflictsQuery.isLoading || conflictsQuery.isFetching || (conflictsQuery.data?.length ?? 0) > 0
 
@@ -450,6 +478,8 @@ export function PhotoPage() {
               lastWasDryRun={lastWasDryRun}
               baselineSummary={summaryQuery.data}
               isSummaryLoading={summaryQuery.isLoading}
+              lastSyncRun={syncStatus?.lastRun ?? null}
+              isSyncStatusLoading={isSyncStatusLoading || isSyncStatusFetching}
               onRequestStorageUrl={getPhotoStorageUrl}
             />
           </div>
@@ -493,14 +523,13 @@ export function PhotoPage() {
         onSyncError={handleSyncError}
       />
 
-      <div className="space-y-6">
+      <div className="space-y-4 sm:space-y-6">
         <PageTabs
           activeId={activeTab}
-          onSelect={(id) => handleTabChange(id as PhotoPageTab)}
           items={[
-            { id: 'sync', label: '同步结果' },
-            { id: 'library', label: '图库管理' },
-            { id: 'storage', label: '素材存储' },
+            { id: 'library', label: '图库管理', to: TAB_ROUTE_MAP.library, end: true },
+            { id: 'sync', label: '存储同步', to: TAB_ROUTE_MAP.sync, end: true },
+            { id: 'storage', label: '素材存储', to: TAB_ROUTE_MAP.storage, end: true },
           ]}
         />
 

@@ -6,6 +6,7 @@ import {
   DEFAULT_DIRECTORY as DEFAULT_THUMBNAIL_DIRECTORY,
 } from '@afilmory/builder/plugins/thumbnail-storage/shared.js'
 import { StorageManager } from '@afilmory/builder/storage/index.js'
+import type { GitHubConfig, S3Config } from '@afilmory/builder/storage/interfaces.js'
 import type { PhotoAssetManifest } from '@afilmory/db'
 import { CURRENT_PHOTO_MANIFEST_VERSION, DATABASE_ONLY_PROVIDER, photoAssets } from '@afilmory/db'
 import { EventEmitterService } from '@afilmory/framework'
@@ -149,7 +150,7 @@ export class PhotoAssetService {
     return summary
   }
 
-  async deleteAssets(ids: readonly string[]): Promise<void> {
+  async deleteAssets(ids: readonly string[], options?: { deleteFromStorage?: boolean }): Promise<void> {
     if (ids.length === 0) {
       return
     }
@@ -166,14 +167,20 @@ export class PhotoAssetService {
       return
     }
 
-    const { builderConfig, storageConfig } = await this.photoStorageService.resolveConfigForTenant(tenant.tenant.id)
-    const storageManager = this.createStorageManager(builderConfig, storageConfig)
-    const thumbnailRemotePrefix = this.resolveThumbnailRemotePrefix(storageConfig)
-    const deletedThumbnailKeys = new Set<string>()
-    const deletedVideoKeys = new Set<string>()
+    const shouldDeleteFromStorage = options?.deleteFromStorage === true
 
-    for (const record of records) {
-      if (record.storageProvider !== DATABASE_ONLY_PROVIDER) {
+    if (shouldDeleteFromStorage) {
+      const { builderConfig, storageConfig } = await this.photoStorageService.resolveConfigForTenant(tenant.tenant.id)
+      const storageManager = this.createStorageManager(builderConfig, storageConfig)
+      const thumbnailRemotePrefix = this.resolveThumbnailRemotePrefix(storageConfig)
+      const deletedThumbnailKeys = new Set<string>()
+      const deletedVideoKeys = new Set<string>()
+
+      for (const record of records) {
+        if (record.storageProvider === DATABASE_ONLY_PROVIDER) {
+          continue
+        }
+
         try {
           await storageManager.deleteFile(record.storageKey)
         } catch (error) {
@@ -725,10 +732,10 @@ export class PhotoAssetService {
   private resolveStorageDirectory(storageConfig: StorageConfig): string | null {
     switch (storageConfig.provider) {
       case 's3': {
-        return this.normalizeDirectory(storageConfig.prefix)
+        return this.normalizeDirectory((storageConfig as unknown as S3Config).prefix)
       }
       case 'github': {
-        return this.normalizeDirectory(storageConfig.path)
+        return this.normalizeDirectory((storageConfig as GitHubConfig).path)
       }
       default: {
         return null
@@ -793,7 +800,7 @@ export class PhotoAssetService {
     }
 
     if (storageConfig.provider === 's3') {
-      const base = this.normalizeStorageSegment(storageConfig.prefix)
+      const base = this.normalizeStorageSegment((storageConfig as S3Config).prefix)
       return this.joinStorageSegments(base, directory)
     }
 

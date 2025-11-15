@@ -4,7 +4,13 @@ import { m } from 'motion/react'
 import { useMemo, useState } from 'react'
 
 import { getConflictTypeLabel, PHOTO_ACTION_TYPE_CONFIG } from '../../constants'
-import type { PhotoAssetSummary, PhotoSyncAction, PhotoSyncResult, PhotoSyncSnapshot } from '../../types'
+import type {
+  PhotoAssetSummary,
+  PhotoSyncAction,
+  PhotoSyncResult,
+  PhotoSyncRunRecord,
+  PhotoSyncSnapshot,
+} from '../../types'
 
 export function BorderOverlay() {
   return (
@@ -34,7 +40,7 @@ function SummaryCard({ label, value, tone }: SummaryCardProps) {
           : 'text-text'
 
   return (
-    <div className="bg-background-tertiary relative overflow-hidden rounded-lg p-5">
+    <div className="relative overflow-hidden p-5 bg-background-tertiary">
       <BorderOverlay />
       <p className="text-text-tertiary text-xs tracking-wide uppercase">{label}</p>
       <p className={`mt-2 text-2xl font-semibold ${toneClass}`}>{value}</p>
@@ -42,11 +48,44 @@ function SummaryCard({ label, value, tone }: SummaryCardProps) {
   )
 }
 
+const DATE_FORMATTER = new Intl.DateTimeFormat('zh-CN', {
+  dateStyle: 'medium',
+  timeStyle: 'short',
+})
+
+function formatDateTimeLabel(value: string): string {
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) {
+    return value
+  }
+  return DATE_FORMATTER.format(date)
+}
+
+function formatDurationLabel(start: string, end: string): string {
+  const startedAt = new Date(start)
+  const completedAt = new Date(end)
+  const duration = completedAt.getTime() - startedAt.getTime()
+  if (!Number.isFinite(duration) || duration <= 0) {
+    return '不足 1 秒'
+  }
+  const totalSeconds = Math.max(Math.round(duration / 1000), 1)
+  const minutes = Math.floor(totalSeconds / 60)
+  const seconds = totalSeconds % 60
+  const parts: string[] = []
+  if (minutes > 0) {
+    parts.push(`${minutes} 分`)
+  }
+  parts.push(`${seconds} 秒`)
+  return parts.join(' ')
+}
+
 type PhotoSyncResultPanelProps = {
   result: PhotoSyncResult | null
   lastWasDryRun: boolean | null
   baselineSummary?: PhotoAssetSummary | null
   isSummaryLoading?: boolean
+  lastSyncRun?: PhotoSyncRunRecord | null
+  isSyncStatusLoading?: boolean
   onRequestStorageUrl?: (storageKey: string) => Promise<string>
 }
 
@@ -59,8 +98,11 @@ export function PhotoSyncResultPanel({
   lastWasDryRun,
   baselineSummary,
   isSummaryLoading,
+  lastSyncRun,
+  isSyncStatusLoading,
   onRequestStorageUrl,
 }: PhotoSyncResultPanelProps) {
+  const isAwaitingStatus = isSyncStatusLoading && !lastSyncRun
   const summaryItems = useMemo(() => {
     if (result) {
       return [
@@ -79,8 +121,42 @@ export function PhotoSyncResultPanel({
           tone: result.summary.conflicts > 0 ? ('warning' as const) : ('muted' as const),
         },
         {
+          label: '错误条目',
+          value: result.summary.errors,
+          tone: result.summary.errors > 0 ? ('warning' as const) : ('muted' as const),
+        },
+        {
           label: '跳过条目',
           value: result.summary.skipped,
+          tone: 'muted' as const,
+        },
+      ]
+    }
+
+    if (lastSyncRun) {
+      return [
+        { label: '存储对象', value: lastSyncRun.summary.storageObjects },
+        { label: '数据库记录', value: lastSyncRun.summary.databaseRecords },
+        {
+          label: '新增照片',
+          value: lastSyncRun.summary.inserted,
+          tone: lastSyncRun.summary.inserted > 0 ? ('accent' as const) : undefined,
+        },
+        { label: '更新记录', value: lastSyncRun.summary.updated },
+        { label: '删除记录', value: lastSyncRun.summary.deleted },
+        {
+          label: '冲突条目',
+          value: lastSyncRun.summary.conflicts,
+          tone: lastSyncRun.summary.conflicts > 0 ? ('warning' as const) : ('muted' as const),
+        },
+        {
+          label: '错误条目',
+          value: lastSyncRun.summary.errors,
+          tone: lastSyncRun.summary.errors > 0 ? ('warning' as const) : ('muted' as const),
+        },
+        {
+          label: '跳过条目',
+          value: lastSyncRun.summary.skipped,
           tone: 'muted' as const,
         },
       ]
@@ -104,7 +180,18 @@ export function PhotoSyncResultPanel({
     }
 
     return []
-  }, [result, baselineSummary])
+  }, [result, lastSyncRun, baselineSummary])
+
+  const lastSyncRunMeta = useMemo(() => {
+    if (!lastSyncRun) {
+      return null
+    }
+
+    return {
+      completedLabel: formatDateTimeLabel(lastSyncRun.completedAt),
+      durationLabel: formatDurationLabel(lastSyncRun.startedAt, lastSyncRun.completedAt),
+    }
+  }, [lastSyncRun])
 
   const [selectedActionType, setSelectedActionType] = useState<'all' | PhotoSyncAction['type']>('all')
   const [expandedActionKey, setExpandedActionKey] = useState<string | null>(null)
@@ -115,6 +202,7 @@ export function PhotoSyncResultPanel({
       update: 0,
       delete: 0,
       conflict: 0,
+      error: 0,
       noop: 0,
     }
 
@@ -198,7 +286,7 @@ export function PhotoSyncResultPanel({
     const conflictTypeLabel = action.type === 'conflict' ? getConflictTypeLabel(conflictPayload?.type) : null
 
     return (
-      <div className="border-border/20 bg-fill/10 relative overflow-hidden rounded-lg p-4">
+      <div className="relative overflow-hidden p-4">
         <BorderOverlay />
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex flex-wrap items-center gap-2">
@@ -214,7 +302,7 @@ export function PhotoSyncResultPanel({
           </span>
         </div>
 
-        {action.reason ? <p className="text-text-tertiary text-sm">{action.reason}</p> : null}
+        {action.reason ? <p className="text-text-tertiary text-sm mt-2">{action.reason}</p> : null}
 
         {conflictTypeLabel || conflictPayload?.incomingStorageKey ? (
           <div className="text-text-tertiary text-xs">
@@ -242,13 +330,13 @@ export function PhotoSyncResultPanel({
         {action.snapshots ? (
           <div className="text-text-tertiary grid gap-4 text-xs md:grid-cols-2">
             {action.snapshots.before ? (
-              <div>
+              <div className="mt-4">
                 <p className="text-text font-semibold">元数据（数据库）</p>
                 <MetadataSnapshot snapshot={action.snapshots.before} />
               </div>
             ) : null}
             {action.snapshots.after ? (
-              <div>
+              <div className="mt-4">
                 <p className="text-text font-semibold">元数据（存储）</p>
                 <MetadataSnapshot snapshot={action.snapshots.after} />
               </div>
@@ -260,17 +348,53 @@ export function PhotoSyncResultPanel({
   }
 
   if (!result) {
+    if (lastSyncRun && lastSyncRunMeta) {
+      return (
+        <div className="relative overflow-hidden p-6 bg-background-secondary">
+          <BorderOverlay />
+          <div className="space-y-4">
+            <div className="space-y-1">
+              <h2 className="text-text text-base font-semibold">最近一次同步完成</h2>
+              <p className="text-text-tertiary text-sm">
+                <span>完成于 {lastSyncRunMeta.completedLabel}</span>
+                <span className="mx-1">·</span>
+                <span>耗时 {lastSyncRunMeta.durationLabel}</span>
+                <span className="mx-1">·</span>
+                <span>{lastSyncRun.dryRun ? '预览模式 · 未写入数据库' : '实时模式 · 已写入数据库'}</span>
+              </p>
+              <p className="text-text-tertiary text-xs">
+                <span>共 {lastSyncRun.actionsCount} 个操作</span>
+              </p>
+            </div>
+            {summaryItems.length > 0 ? (
+              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+                {summaryItems.map((item) => (
+                  <SummaryCard key={item.label} label={item.label} value={item.value} tone={item.tone} />
+                ))}
+              </div>
+            ) : null}
+          </div>
+        </div>
+      )
+    }
+
+    const showSkeleton = isSummaryLoading || isAwaitingStatus
+
     return (
-      <div className="bg-background-tertiary relative overflow-hidden rounded-lg p-6">
+      <div className="relative overflow-hidden p-6 bg-background-secondary">
         <BorderOverlay />
         <div className="space-y-4">
           <div className="space-y-2">
-            <h2 className="text-text text-base font-semibold">尚未执行同步</h2>
+            <h2 className="text-text text-base font-semibold">
+              {isAwaitingStatus ? '正在加载同步状态' : '尚未执行同步'}
+            </h2>
             <p className="text-text-tertiary text-sm">
-              请在系统设置中配置并激活存储提供商，然后使用右上角的按钮执行同步操作。预览模式不会写入数据，可用于安全检查。
+              {isAwaitingStatus
+                ? '正在查询最近一次同步记录，请稍候…'
+                : '请在系统设置中配置并激活存储提供商，然后使用右上角的按钮执行同步操作。预览模式不会写入数据，可用于安全检查。'}
             </p>
           </div>
-          {isSummaryLoading ? (
+          {showSkeleton ? (
             <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
               {SUMMARY_SKELETON_KEYS.map((key) => (
                 <div key={key} className="bg-fill/30 h-24 animate-pulse rounded-lg" />
@@ -325,7 +449,7 @@ export function PhotoSyncResultPanel({
         ))}
       </div>
 
-      <div className="bg-background-tertiary relative overflow-hidden rounded-lg">
+      <div className="relative overflow-hidden bg-background-tertiary">
         <BorderOverlay />
         <div className="p-6">
           <div className="flex flex-wrap items-center justify-between gap-3">
@@ -355,7 +479,7 @@ export function PhotoSyncResultPanel({
           </div>
 
           {filteredActions.length === 0 ? (
-            <p className="text-text-tertiary text-sm">
+            <p className="text-text-tertiary text-sm mt-4">
               {result ? '当前筛选下没有需要查看的操作。' : '同步完成，未检测到需要处理的对象。'}
             </p>
           ) : (
@@ -385,7 +509,7 @@ export function PhotoSyncResultPanel({
                       delay: index * 0.03,
                     }}
                   >
-                    <div className="border-border/20 bg-fill/10 relative overflow-hidden rounded-lg">
+                    <div className="border-border/20 mt-4 bg-fill/10 relative overflow-hidden rounded-lg">
                       <BorderOverlay />
                       <div className="space-y-3 p-4">
                         <div className="flex flex-wrap items-center justify-between gap-3">

@@ -8,50 +8,47 @@ import { UserMenu } from './UserMenu'
 const navigationTabs = [
   { label: 'Dashboard', path: '/' },
   { label: 'Photos', path: '/photos' },
-  { label: 'Settings', path: '/settings' },
   { label: 'Analytics', path: '/analytics' },
+  { label: 'Settings', path: '/settings' },
 ] as const
 
 export function Header() {
   const user = useAuthUserValue()
 
   return (
-    <nav className="bg-background-tertiary relative shrink-0 px-6 py-3">
-      {/* Bottom border with gradient */}
-      <div className="via-text/20 absolute right-0 bottom-0 left-0 h-[0.5px] bg-linear-to-r from-transparent to-transparent" />
-
-      <div className="flex items-center gap-6">
+    <header className="bg-background relative shrink-0 border-b border-fill-tertiary/50">
+      <div className="flex h-14 items-center px-3 sm:px-6">
         {/* Logo/Brand */}
-        <div className="text-text text-base font-semibold">Afilmory</div>
+        <a href="/" className="text-text mr-2 sm:mr-8 text-sm sm:text-base font-semibold tracking-tight">
+          Afilmory
+        </a>
 
-        {/* Navigation Tabs - subtle rounded corners */}
-        <div className="flex flex-1 items-center gap-1">
+        {/* Navigation Tabs */}
+        <nav className="flex flex-1 items-center gap-0.5 sm:gap-1 overflow-x-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
           {navigationTabs.map((tab) => (
             <NavLink key={tab.path} to={tab.path} end={tab.path === '/'}>
               {({ isActive }) => (
                 <div
                   className={clsxm(
-                    'relative overflow-hidden rounded-lg px-3 py-1.5',
-                    isActive ? 'bg-accent/10' : 'bg-transparent',
+                    'relative rounded-lg px-2 sm:px-4 py-1.5 sm:py-2 text-xs sm:text-sm font-medium transition-all duration-200 whitespace-nowrap',
+                    'hover:bg-fill/30',
+                    isActive ? 'bg-accent/10 text-accent' : 'text-text-secondary hover:text-text',
                   )}
                 >
-                  <span
-                    className="relative z-10 text-[13px] font-medium transition-colors"
-                    style={{
-                      color: isActive ? 'var(--color-accent)' : 'var(--color-text-secondary)',
-                    }}
-                  >
-                    {tab.label}
-                  </span>
+                  {tab.label}
                 </div>
               )}
             </NavLink>
           ))}
-        </div>
+        </nav>
 
         {/* Right side - User Menu */}
-        {user && <UserMenu user={user} />}
+        {user && (
+          <div className="border-fill-tertiary/50 ml-2 sm:ml-auto border-l pl-2 sm:pl-4">
+            <UserMenu user={user} />
+          </div>
+        )}
       </div>
-    </nav>
+    </header>
   )
 }

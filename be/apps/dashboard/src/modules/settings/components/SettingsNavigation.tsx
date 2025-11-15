@@ -8,15 +8,23 @@ const SETTINGS_TABS = [
     end: true,
   },
   {
-    id: 'builder',
-    label: '构建器',
-    path: '/settings/builder',
+    id: 'user',
+    label: '用户信息',
+    path: '/settings/user',
     end: true,
   },
+
   {
     id: 'account',
     label: '账号与登录',
     path: '/settings/account',
+    end: true,
+  },
+
+  {
+    id: 'data',
+    label: '数据管理',
+    path: '/settings/data',
     end: true,
   },
 ] as const

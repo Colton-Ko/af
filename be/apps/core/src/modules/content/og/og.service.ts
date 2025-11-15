@@ -1,4 +1,4 @@
-import { readFile } from 'node:fs/promises'
+import { readFile, stat } from 'node:fs/promises'
 import { resolve } from 'node:path'
 
 import type { PhotoManifestItem } from '@afilmory/builder'
@@ -11,6 +11,7 @@ import { injectable } from 'tsyringe'
 
 import { ManifestService } from '../manifest/manifest.service'
 import geistFontUrl from './assets/Geist-Medium.ttf?url'
+import harmonySansScMediumFontUrl from './assets/HarmonyOS_Sans_SC_Medium.ttf?url'
 import { renderOgImage } from './og.renderer'
 import type { ExifInfo, PhotoDimensions } from './og.template'
 
@@ -21,6 +22,31 @@ interface ThumbnailCandidateResult {
   contentType: string
 }
 
+const GeistFontCandidates = [
+  resolve(process.cwd(), `./${geistFontUrl}`),
+  resolve(process.cwd(), `./dist/${geistFontUrl}`),
+]
+
+if (__DEV__) {
+  GeistFontCandidates.push(
+    resolve(process.cwd(), `./be/apps/core/src/modules/content/og/assets/Geist-Medium.ttf`),
+    resolve(process.cwd(), `./apps/core/src/modules/content/og/assets/Geist-Medium.ttf`),
+    resolve(process.cwd(), `./core/src/modules/content/og/assets/Geist-Medium.ttf`),
+  )
+}
+
+const HarmonySansScMediumFontCandidates = [
+  resolve(process.cwd(), `./${harmonySansScMediumFontUrl}`),
+  resolve(process.cwd(), `./dist/${harmonySansScMediumFontUrl}`),
+]
+
+if (__DEV__) {
+  HarmonySansScMediumFontCandidates.push(
+    resolve(process.cwd(), `./be/apps/core/src/modules/content/og/assets/HarmonyOS_Sans_SC_Medium.ttf`),
+    resolve(process.cwd(), `./apps/core/src/modules/content/og/assets/HarmonyOS_Sans_SC_Medium.ttf`),
+    resolve(process.cwd(), `./core/src/modules/content/og/assets/HarmonyOS_Sans_SC_Medium.ttf`),
+  )
+}
 @injectable()
 export class OgService implements OnModuleDestroy {
   private fontConfig: SatoriOptions['fonts'] | null = null
@@ -76,19 +102,38 @@ export class OgService implements OnModuleDestroy {
     return new Response(body, { status: 200, headers })
   }
 
-  // private cjkFontPromise: Promise<NonSharedBuffer> | null = null
   private geistFontPromise: Promise<NonSharedBuffer> | null = null
-
-  loadFonts() {
+  private harmonySansScMediumFontPromise: Promise<NonSharedBuffer> | null = null
+  async loadFonts() {
     if (!this.geistFontPromise) {
-      // this.cjkFontPromise = readFile(resolve(process.cwd(), `./${cjkFontUrl}`))
-      this.geistFontPromise = readFile(resolve(process.cwd(), `./${geistFontUrl}`))
+      for (const candidate of GeistFontCandidates) {
+        const stats = await stat(candidate).catch(() => null)
+        if (!stats) {
+          continue
+        }
+        if (stats.isFile()) {
+          this.geistFontPromise = readFile(candidate)
+          break
+        }
+      }
+    }
+    if (!this.harmonySansScMediumFontPromise) {
+      for (const candidate of HarmonySansScMediumFontCandidates) {
+        const stats = await stat(candidate).catch(() => null)
+        if (!stats) {
+          continue
+        }
+        if (stats.isFile()) {
+          this.harmonySansScMediumFontPromise = readFile(candidate)
+          break
+        }
+      }
     }
     this.resetFontCleanupTimer()
   }
 
   private async getFontConfig(): Promise<SatoriOptions['fonts']> {
-    this.loadFonts()
+    await this.loadFonts()
 
     return [
       {
@@ -97,12 +142,12 @@ export class OgService implements OnModuleDestroy {
         style: 'normal',
         weight: 400,
       },
-      // {
-      //   name: '狮尾咏腿黑体',
-      //   data: await this.cjkFontPromise!,
-      //   style: 'normal',
-      //   weight: 400,
-      // },
+      {
+        name: 'HarmonyOS Sans SC',
+        data: await this.harmonySansScMediumFontPromise!,
+        style: 'normal',
+        weight: 400,
+      },
     ]
   }
 
@@ -113,8 +158,8 @@ export class OgService implements OnModuleDestroy {
     // Clean font promises 10 minutes after last activity
     this.fontCleanupTimer = setTimeout(
       () => {
-        // this.cjkFontPromise = null
         this.geistFontPromise = null
+        this.harmonySansScMediumFontPromise = null
         this.fontConfig = null
         this.fontCleanupTimer = null
       },

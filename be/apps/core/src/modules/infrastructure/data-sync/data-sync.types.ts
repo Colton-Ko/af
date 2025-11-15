@@ -6,7 +6,7 @@ export enum ConflictResolutionStrategy {
   PREFER_DATABASE = 'prefer-database',
 }
 
-export type DataSyncActionType = 'insert' | 'update' | 'delete' | 'conflict' | 'noop'
+export type DataSyncActionType = 'insert' | 'update' | 'delete' | 'conflict' | 'noop' | 'error'
 
 export interface SyncObjectSnapshot {
   size: number | null
@@ -47,11 +47,25 @@ export interface DataSyncResultSummary {
   deleted: number
   conflicts: number
   skipped: number
+  errors: number
 }
 
 export interface DataSyncResult {
   summary: DataSyncResultSummary
   actions: DataSyncAction[]
+}
+
+export interface DataSyncRunRecord {
+  id: string
+  dryRun: boolean
+  summary: DataSyncResultSummary
+  actionsCount: number
+  startedAt: string
+  completedAt: string
+}
+
+export interface DataSyncStatus {
+  lastRun: DataSyncRunRecord | null
 }
 
 export interface DataSyncOptions {

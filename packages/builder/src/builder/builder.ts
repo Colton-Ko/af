@@ -658,10 +658,6 @@ export class AfilmoryBuilder {
       addReference(ref)
     }
 
-    if (this.getUserSettings().repo.enable && !hasPluginWithName('afilmory:github-repo-sync')) {
-      addReference(() => import('@afilmory/builder/plugins/github-repo-sync.js'))
-    }
-
     return references
   }
 
@@ -681,7 +677,7 @@ export class AfilmoryBuilder {
   }
 
   getStorageConfig(): StorageConfig {
-    const {storage} = this.getUserSettings()
+    const { storage } = this.getUserSettings()
     if (!storage) {
       throw new Error('Storage configuration is missing. 请配置 system/user storage 设置。')
     }
